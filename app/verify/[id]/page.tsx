@@ -1,0 +1,272 @@
+"use client";
+
+import { useState, useEffect } from "react";
+import { useParams } from "next/navigation";
+import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { 
+    ShieldCheck, 
+    ExternalLink, 
+    Lock, 
+    CheckCircle2, 
+    Calendar, 
+    Info, 
+    Globe,
+    Clock
+} from "lucide-react";
+import { getSharedProofById, SharedProofConfig } from "@/lib/proofService";
+import { getReceiptsByWallet, Receipt } from "@/lib/receiptService";
+import { CONTRACTS, VAULT_ABI } from "@/lib/contracts";
+import { createPublicClient, http } from "viem";
+import { arbitrumSepolia } from "viem/chains";
+import Link from "next/link";
+
+const publicClient = createPublicClient({
+    chain: arbitrumSepolia,
+    transport: http()
+});
+
+export default function VerifyProofPage() {
+    const params = useParams();
+    const id = params.id as string;
+
+    const [proofConfig, setProofConfig] = useState<SharedProofConfig | null>(null);
+    const [receipts, setReceipts] = useState<Receipt[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+    const [vaultDetails, setVaultDetails] = useState<Record<string, any>>({});
+
+    useEffect(() => {
+        const loadProofData = async () => {
+            try {
+                setIsLoading(true);
+                const config = await getSharedProofById(id);
+                if (!config) {
+                    setError("This proof link is invalid or has expired.");
+                    return;
+                }
+                setProofConfig(config);
+
+                const allReceipts = await getReceiptsByWallet(config.walletAddress, CONTRACTS.arbitrumSepolia.VaultFactory);
+
+                const filtered = allReceipts.filter(r => {
+                    const inTimeRange = r.timestamp >= config.startDate && r.timestamp <= config.endDate;
+                    const isAllowed = config.allowedVaults.includes(r.vaultAddress || "");
+                    return inTimeRange && isAllowed;
+                });
+
+                setReceipts(filtered);
+
+                const uniqueVaults = Array.from(new Set(filtered.map(r => r.vaultAddress))).filter(Boolean) as string[];
+                const details: Record<string, any> = {};
+                
+                await Promise.all(uniqueVaults.map(async (addr) => {
+                    try {
+                        const unlockTime = await publicClient.readContract({
+                            address: addr as `0x${string}`,
+                            abi: VAULT_ABI,
+                            functionName: 'unlockTimestamp',
+                        });
+                        details[addr] = {
+                            unlockTimestamp: Number(unlockTime) * 1000,
+                        };
+                    } catch (e) {
+                        console.error(`Error fetching on-chain data for ${addr}:`, e);
+                    }
+                }));
+                setVaultDetails(details);
+
+            } catch (err) {
+                console.error("Error loading proof:", err);
+                setError("Failed to load proof data. Please try again later.");
+            } finally {
+                setIsLoading(false);
+            }
+        };
+
+        if (id) loadProofData();
+    }, [id]);
+
+    if (isLoading) {
+        return (
+            <div className="min-h-screen bg-black flex flex-col items-center justify-center p-6 text-center">
+                <div className="w-20 h-20 bg-primary/10 rounded-full flex items-center justify-center mb-6 animate-pulse">
+                    <ShieldCheck className="w-10 h-10 text-primary" />
+                </div>
+                <h2 className="text-xl font-bold text-white mb-2">Verifying Financial Record...</h2>
+                <p className="text-gray-500 text-sm">Connecting to Arbitrum Blockchain</p>
+            </div>
+        );
+    }
+
+    if (error || !proofConfig) {
+        return (
+            <div className="min-h-screen bg-black flex flex-col items-center justify-center p-6 text-center">
+                <Card className="max-w-md p-8 bg-zinc-900/40 border-zinc-800">
+                    <Info className="w-16 h-16 text-red-500 mx-auto mb-4" />
+                    <h2 className="text-2xl font-bold text-white mb-2">Access Denied</h2>
+                    <p className="text-gray-400 mb-6">{error || "This document is no longer available."}</p>
+                    <Link href="/">
+                        <Button className="bg-primary hover:bg-primary/90 text-white">Back to Savique</Button>
+                    </Link>
+                </Card>
+            </div>
+        );
+    }
+
+    const vaultRecords = Array.from(new Set(receipts.map(r => r.vaultAddress))).filter(Boolean) as string[];
+
+    return (
+        <div className="min-h-screen bg-[#050505] text-white p-4 md:p-12 selection:bg-primary selection:text-white">
+            <div className="max-w-6xl mx-auto space-y-12">
+                
+                {/* Header */}
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-8">
+                    <div className="space-y-4">
+                        <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-primary/10 border border-primary/20 text-primary text-xs font-bold uppercase tracking-widest">
+                            <ShieldCheck className="w-3.5 h-3.5" />
+                            Verified On-Chain
+                        </div>
+                        <h1 className="text-4xl md:text-5xl font-black tracking-tighter">
+                            Financial Statement
+                        </h1>
+                        <div className="flex flex-wrap items-center gap-6 text-gray-400 text-sm">
+                            <div className="flex items-center gap-2">
+                                <Globe className="w-4 h-4 text-primary" />
+                                <span>Network: Arbitrum One</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <Clock className="w-4 h-4 text-primary" />
+                                <span>Statement Date: {new Date(proofConfig.createdAt).toLocaleDateString()}</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <Card className="bg-zinc-950 border-zinc-800/50 p-6 flex flex-col items-start justify-center">
+                        <p className="text-[10px] uppercase font-bold text-gray-500 mb-2">Verified Owner</p>
+                        <p className="font-mono text-sm text-primary">
+                            {proofConfig.walletAddress.slice(0, 8)}...{proofConfig.walletAddress.slice(-6)}
+                        </p>
+                    </Card>
+                </div>
+
+                {/* Main Table */}
+                <Card className="overflow-hidden bg-zinc-900/20 border-zinc-800/50 backdrop-blur-sm rounded-3xl">
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-left border-collapse">
+                            <thead>
+                                <tr className="border-b border-white/5 bg-white/[0.02]">
+                                    <th className="px-6 py-5 text-[10px] uppercase font-black tracking-widest text-gray-500">Purpose</th>
+                                    <th className="px-6 py-5 text-[10px] uppercase font-black tracking-widest text-gray-500">Amount</th>
+                                    <th className="px-6 py-5 text-[10px] uppercase font-black tracking-widest text-gray-500">Start Date</th>
+                                    <th className="px-6 py-5 text-[10px] uppercase font-black tracking-widest text-gray-500">Expiry Date</th>
+                                    <th className="px-6 py-5 text-[10px] uppercase font-black tracking-widest text-gray-500">Status</th>
+                                    <th className="px-6 py-5 text-[10px] uppercase font-black tracking-widest text-gray-500">Verification</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-white/5">
+                                {vaultRecords.map((addr) => {
+                                    const vaultReceipts = receipts.filter(r => r.vaultAddress === addr);
+                                    
+                                    // Use the first receipt found to get the purpose (often the 'created' one)
+                                    const primaryReceipt = vaultReceipts[0];
+                                    const withdrawalReceipt = vaultReceipts.find(r => r.type === 'completed' || r.type === 'breaked');
+                                    
+                                    // Robust amount calculation: use the maximum amount found across all receipts for this vault
+                                    const amounts = vaultReceipts.map(r => parseFloat(r.amount)).filter(a => !isNaN(a));
+                                    const maxAmount = amounts.length > 0 ? Math.max(...amounts) : 0;
+
+                                    const details = vaultDetails[addr] || {};
+                                    const isWithdrawn = !!withdrawalReceipt;
+
+                                    return (
+                                        <tr key={addr} className="hover:bg-white/[0.02] transition-colors group">
+                                            <td className="px-6 py-8">
+                                                <div className="flex items-center gap-3">
+                                                    <div className="w-8 h-8 rounded-lg bg-zinc-800 flex items-center justify-center text-zinc-500 group-hover:text-primary transition-colors">
+                                                        <Lock className="w-4 h-4" />
+                                                    </div>
+                                                    <span className="font-bold text-white text-sm">
+                                                        {primaryReceipt.purpose || "Savings Vault"}
+                                                    </span>
+                                                </div>
+                                            </td>
+                                            <td className="px-6 py-8">
+                                                <div className="space-y-1">
+                                                    <p className="text-lg font-black text-white">{maxAmount.toLocaleString()} USDC</p>
+                                                    <p className="text-[10px] text-gray-500 font-bold uppercase tracking-tight">On-Chain Asset</p>
+                                                </div>
+                                            </td>
+                                            <td className="px-6 py-8 text-sm text-gray-400 font-medium">
+                                                {new Date(primaryReceipt.timestamp).toLocaleDateString()}
+                                            </td>
+                                            <td className="px-6 py-8">
+                                                {details.unlockTimestamp ? (
+                                                    <div className="flex items-center gap-2 text-sm text-gray-400 font-medium">
+                                                        <Calendar className="w-3.5 h-3.5 text-primary" />
+                                                        {new Date(details.unlockTimestamp).toLocaleDateString()}
+                                                    </div>
+                                                ) : (
+                                                    <span className="text-gray-600 text-[10px] font-bold uppercase">Syncing...</span>
+                                                )}
+                                            </td>
+                                            <td className="px-6 py-8">
+                                                {isWithdrawn ? (
+                                                    <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/20 text-[10px] font-black uppercase tracking-widest">
+                                                        <CheckCircle2 className="w-3 h-3" />
+                                                        Withdrawn
+                                                    </div>
+                                                ) : (
+                                                    <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-primary/10 text-primary border border-primary/20 text-[10px] font-black uppercase tracking-widest">
+                                                        <Clock className="w-3 h-3" />
+                                                        Active
+                                                    </div>
+                                                )}
+                                            </td>
+                                            <td className="px-6 py-8">
+                                                <Button 
+                                                    size="sm" 
+                                                    variant="ghost" 
+                                                    className="h-9 px-4 gap-2 text-primary hover:bg-primary/10 hover:text-primary font-bold text-xs"
+                                                    onClick={() => window.open(`https://sepolia.arbiscan.io/address/${addr}`, '_blank')}
+                                                >
+                                                    Explore
+                                                    <ExternalLink className="w-3.5 h-3.5" />
+                                                </Button>
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
+                            </tbody>
+                        </table>
+                    </div>
+                </Card>
+
+                {/* Proof Footers */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div className="p-8 rounded-3xl bg-zinc-900/20 border border-white/5 space-y-4">
+                        <ShieldCheck className="w-8 h-8 text-primary" />
+                        <h4 className="font-bold text-white">Immutable Proof</h4>
+                        <p className="text-xs text-gray-500 leading-relaxed">
+                            This data is cryptographically verified and pulled directly from the Arbitrum blockchain network.
+                        </p>
+                    </div>
+                    <div className="p-8 rounded-3xl bg-zinc-900/20 border border-white/5 space-y-4">
+                        <Globe className="w-8 h-8 text-primary" />
+                        <h4 className="font-bold text-white">Public Audit</h4>
+                        <p className="text-xs text-gray-500 leading-relaxed">
+                            Anyone can independently audit these records using the provided explorer links.
+                        </p>
+                    </div>
+                    <div className="p-8 rounded-3xl bg-zinc-900/20 border border-white/5 space-y-4">
+                        <Clock className="w-8 h-8 text-primary" />
+                        <h4 className="font-bold text-white">Security Gated</h4>
+                        <p className="text-xs text-gray-500 leading-relaxed">
+                            Savique smart contracts ensure that funds are time-locked and cannot be modified post-deposit.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+}

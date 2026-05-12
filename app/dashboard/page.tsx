@@ -2,7 +2,7 @@
 
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Plus, Lock, Wallet, TrendingUp, CheckCircle, Eye, EyeOff } from "lucide-react";
+import { Plus, Lock, Wallet, TrendingUp, CheckCircle, Eye, EyeOff, FileText, Share2 } from "lucide-react";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import { useAccount, useReadContract, useReadContracts } from "wagmi";
@@ -302,6 +302,7 @@ export default function Dashboard() {
                             </Button>
                         </Link>
                     </div>
+
                     <Link href="/dashboard/create">
                         <Button className="gap-2 bg-primary text-white hover:bg-primary/90">
                             <Plus className="w-4 h-4" /> Create New Savings

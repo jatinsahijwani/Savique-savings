@@ -8,7 +8,7 @@ Savique is a premium, disciplined, on-chain savings platform designed for high-c
 
 Modern digital wealth is engineered for high liquidity, which often leads to **financial indiscretion**. Traditional wallets make it too easy to "dip into" funds meant for long-term goals or essential expenses like rent, taxes, or business capital.
 
-Furthermore, when users need to prove their financial stability to third parties (landlords, auditors, or banks), they lack a **verifiable, tamper-proof audit trail** that proves they have the discipline to hold and commit capital over time.
+Furthermore, when users need to prove their financial stability to third parties (landlords, auditors, or banks), they lack a **verifiable, tamper-proof audit trail** that proves they have the discipline to hold and commit capital over time. Traditional institutions typically reject raw wallet balances because they lack standardized, verifiable histories.
 
 ---
 
@@ -17,8 +17,8 @@ Furthermore, when users need to prove their financial stability to third parties
 Savique provides a **Strategic Commitment Layer** for your capital. By moving beyond simple "storage," it introduces:
 
 1.  **Enforced Discipline**: Funds are cryptographically sealed for a user-defined period, removing the temptation of impulsive spending.
-2.  **Verified Audit Trails**: Every financial action produces a cryptographically signed receipt via **ProofRails**, creating an immutable history of your financial commitment.
-3.  **Real-World Utility**: Bridge the gap to IRL financial requirements with professional, verifiable reports and digital inheritance.
+2.  **On-Chain Receipt System**: To solve the verification gap with landlords and banks, Savique generates an immutable receipt for every action. This acts as a standardized, tamper-proof audit trail tied directly to Arbitrum transaction hashes.
+3.  **Real-World Utility**: Bridge the gap to IRL financial requirements. Users can present their Transaction History Dashboard to third parties as cryptographic proof of their financial discipline and capital retention over time.
 
 ---
 

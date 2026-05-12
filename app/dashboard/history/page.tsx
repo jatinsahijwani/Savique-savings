@@ -3,18 +3,19 @@
 import { useState, useEffect } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Receipt as ReceiptIcon, ExternalLink, CheckCircle, Calendar, Clock, Wallet, Download, FileText, Loader2, Zap } from "lucide-react";
+import { Receipt as ReceiptIcon, ExternalLink, CheckCircle, Calendar, Clock, Wallet, Download, FileText, Loader2, Zap, Share2 } from "lucide-react";
 import { motion } from "framer-motion";
 import { useAccount } from "wagmi";
 import { getReceiptsByWallet, Receipt } from "@/lib/receiptService";
 import { CONTRACTS } from "@/lib/contracts";
+import { ProofSelectionModal } from "@/components/ProofSelectionModal";
 
 export default function HistoryPage() {
     const { address: currentAddress, isConnected, isConnecting, isReconnecting } = useAccount();
 
-
     const [receipts, setReceipts] = useState<Receipt[]>([]);
     const [isLoading, setIsLoading] = useState(true);
+    const [isModalOpen, setIsModalOpen] = useState(false);
 
     useEffect(() => {
         const loadReceipts = async () => {
@@ -70,8 +71,22 @@ export default function HistoryPage() {
                     <h1 className="text-3xl font-bold text-white mb-2">Transaction History</h1>
                     <p className="text-gray-400">View your transaction history on the network</p>
                 </div>
+                
+                <Button 
+                    onClick={() => setIsModalOpen(true)}
+                    className="gap-2 bg-primary hover:bg-primary/90 text-white font-bold h-12 px-6 rounded-xl shadow-lg shadow-primary/10"
+                >
+                    <Share2 className="w-4 h-4" />
+                    Share Proof
+                </Button>
             </div>
 
+            <ProofSelectionModal 
+                isOpen={isModalOpen}
+                onClose={() => setIsModalOpen(false)}
+                receipts={receipts}
+                walletAddress={currentAddress || ""}
+            />
 
             {isLoading ? (
                 <div className="grid grid-cols-1 gap-4">

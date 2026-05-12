@@ -186,6 +186,7 @@ function SidebarContent({ pathname, onNavigate }: { pathname: string; onNavigate
                         active={pathname.startsWith("/dashboard/tips")}
                         onClick={onNavigate}
                     />
+
                     <NavItem
                         href="/dashboard/settings"
                         icon={<Settings className="w-5 h-5" />}
@@ -224,6 +225,7 @@ const BOTTOM_NAV_MORE = [
     { href: "/dashboard/analysis", icon: BarChart3, label: "Analysis" },
     { href: "/dashboard/leaderboard", icon: Trophy, label: "Leaderboard" },
     { href: "/dashboard/tips", icon: Lightbulb, label: "Savings Tips" },
+
     { href: "/dashboard/settings", icon: Settings, label: "Settings" },
 ];
 

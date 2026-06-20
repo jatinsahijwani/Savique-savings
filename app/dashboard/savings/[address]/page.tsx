@@ -14,7 +14,10 @@ import Link from "next/link";
 import { calculateAccruedInterest } from "@/lib/interestService";
 import { VaultBreakModal } from "@/components/VaultBreakModal";
 import { ShareProofModal } from "@/components/ShareProofModal";
+import { VaultTopUpModal } from "@/components/VaultTopUpModal";
+import { useContractAddresses } from "@/hooks/useContractAddresses";
 import { saveReceipt, getVaultByAddress, SavedVault, updateReceipt, saveVault, getReceiptsByVault, Receipt } from "@/lib/receiptService";
+import { ChainrailsModal } from "@/app/dashboard/create/ChainrailsModal";
 import { createNotification } from "@/lib/notificationService";
 import { getUserProfile } from "@/lib/userService";
 import { Progress } from "../../../../components/ui/progress";
@@ -71,6 +74,7 @@ export default function VaultDetailPage() {
     const [isBreakModalOpen, setIsBreakModalOpen] = useState(false);
     const [isShareModalOpen, setIsShareModalOpen] = useState(false);
     const { address: userAddress, isConnected } = useAccount();
+    const { usdtAddress, isLoaded } = useContractAddresses();
 
 
 
@@ -90,6 +94,9 @@ export default function VaultDetailPage() {
     const [totalPrincipal, setTotalPrincipal] = useState(0);
 
     const [isApprovingVault, setIsApprovingVault] = useState(false);
+    const [selectedTopUpTab, setSelectedTopUpTab] = useState<'usdc' | 'fiat'>('usdc');
+    const [isFiatLoading, setIsFiatLoading] = useState(false);
+    const [showModal, setShowModal] = useState(false);
 
     useEffect(() => {
         const fetchVault = async () => {
@@ -106,11 +113,11 @@ export default function VaultDetailPage() {
                 let principal = receipts
                     .filter(r => r.type === 'created')
                     .reduce((sum, r) => sum + parseFloat(r.amount), 0);
-                
+
                 if (principal === 0 && data?.targetAmount) {
                     principal = parseFloat(data.targetAmount);
                 }
-                
+
                 setTotalPrincipal(principal);
 
 
@@ -124,9 +131,10 @@ export default function VaultDetailPage() {
     const { data: balanceResult, refetch: refetchBalance } = useReadContract({ address, abi: VAULT_ABI, functionName: "totalAssets" });
     const { data: unlockTimeResult } = useReadContract({ address, abi: VAULT_ABI, functionName: "unlockTimestamp" });
     const { data: decimals } = useReadContract({
-        address: CONTRACTS.arbitrumSepolia.USDCToken,
+        address: usdtAddress,
         abi: ERC20_ABI,
         functionName: 'decimals',
+        query: { enabled: isLoaded }
     });
 
     const { data: beneficiary } = useReadContract({ address, abi: VAULT_ABI, functionName: "beneficiary" });
@@ -134,20 +142,20 @@ export default function VaultDetailPage() {
 
     // Check Allowance for Top-up
     const { data: allowance, refetch: refetchAllowance } = useReadContract({
-        address: CONTRACTS.arbitrumSepolia.USDCToken,
+        address: usdtAddress,
         abi: ERC20_ABI,
         functionName: 'allowance',
         args: [userAddress as `0x${string}`, address],
-        query: { enabled: !!userAddress && !!address },
+        query: { enabled: !!userAddress && !!address && isLoaded },
     });
 
     // Balance for Top-up
     const { data: userBalance, refetch: refetchUserBalance } = useReadContract({
-        address: CONTRACTS.arbitrumSepolia.USDCToken,
+        address: usdtAddress,
         abi: ERC20_ABI,
         functionName: 'balanceOf',
         args: [userAddress as `0x${string}`],
-        query: { enabled: !!userAddress },
+        query: { enabled: !!userAddress && isLoaded },
     });
 
     // Read Dynamic Interest Rate from Aave
@@ -156,7 +164,8 @@ export default function VaultDetailPage() {
         abi: AAVE_POOL_ABI,
         //@ts-ignore - complex tuple return
         functionName: 'getReserveData',
-        args: [CONTRACTS.arbitrumSepolia.USDCToken],
+        args: [usdtAddress],
+        query: { enabled: isLoaded }
     });
 
     const dynamicApy = useMemo(() => {
@@ -169,16 +178,16 @@ export default function VaultDetailPage() {
 
     const accruedInterest = useMemo(() => {
         if (!balanceResult || !decimals) return "0.000000";
-        
+
         // currentBalance includes principal + interest
         const currentBalance = parseFloat(formatUnits(balanceResult as bigint, decimals as number || 18));
-        
+
         // Interest is the difference
         const rawInterest = Math.max(0, currentBalance - totalPrincipal);
-        
+
         // Professional "Net Display": Only show the 80% that belongs to the user
         const userInterest = rawInterest * 0.8;
-        
+
         return userInterest.toFixed(6);
     }, [balanceResult, decimals, totalPrincipal]);
 
@@ -457,13 +466,18 @@ export default function VaultDetailPage() {
     const handleTopUp = async (bypassAllowance = false) => {
         if (!userAddress || !topUpAmount) return;
 
+        if (selectedTopUpTab === 'fiat' && !bypassAllowance) {
+            setShowModal(true);
+            return;
+        }
+
         const amountUnits = parseUnits(topUpAmount, decimals as number || 18);
         const currentTotal = parseFloat(balance);
         const adding = parseFloat(topUpAmount);
         const target = vaultData?.targetAmount ? parseFloat(vaultData.targetAmount) : 0;
 
         // Issue 3: Prevent topping up more than goal
-        if (target > 0 && currentTotal + adding > target) {
+        if (target > 0 && parseFloat((currentTotal + adding).toFixed(2)) > parseFloat(target.toFixed(2))) {
             toast.error(`Deposit exceeds goal! Your target is $${target}. Reach this milestone or create a new savings.`, toastStyle);
             return;
         }
@@ -475,7 +489,7 @@ export default function VaultDetailPage() {
                 if (toastId.current) toast.dismiss(toastId.current);
                 toastId.current = toast.loading("Approving USDC...", toastStyle);
                 writeContract({
-                    address: CONTRACTS.arbitrumSepolia.USDCToken,
+                    address: usdtAddress,
                     abi: ERC20_ABI,
                     functionName: "approve",
                     args: [address, BigInt("115792089237316195423570985008687907853269984665640564039457584007913129639935")],
@@ -584,7 +598,7 @@ export default function VaultDetailPage() {
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
                 {/* Main Status Card */}
-                <Card className="md:col-span-2 p-8 bg-gradient-to-br from-zinc-900 to-zinc-950 border-zinc-800 relative overflow-hidden">
+                <Card className="md:col-span-2 p-8 bg-gradient-to-br from-zinc-900 to-zinc-950 border-zinc-800 relative overflow-hidden max-h-[500px]">
                     <div className="absolute top-0 right-0 w-64 h-64 bg-primary/5 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2" />
 
                     <div className="relative z-10 flex flex-col items-center justify-center text-center h-full py-8 space-y-6">
@@ -602,21 +616,8 @@ export default function VaultDetailPage() {
                                         {<span className="text-zinc-500">{countdown.seconds.toString().padStart(2, '0')}<span className="text-lg text-zinc-600 ml-1">s</span></span>}
                                     </div>
                                     <p className="text-sm text-zinc-500">Until {unlockDate.toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
-                                    
-                                    {vaultData?.vaultId && (
-                                        <div className="pt-4">
-                                            <a 
-                                                href={`https://testnets.opensea.io/assets/arbitrum-sepolia/${CONTRACTS.arbitrumSepolia.VaultFactory}/${vaultData.vaultId}`}
-                                                target="_blank"
-                                                rel="noopener noreferrer"
-                                            >
-                                                <Button variant="outline" size="sm" className="bg-white/5 border-white/10 hover:bg-white/10 text-[10px] h-8 px-4 rounded-full">
-                                                    <Zap className="w-3 h-3 mr-2 text-blue-400" />
-                                                    View on OpenSea (Testnet)
-                                                </Button>
-                                            </a>
-                                        </div>
-                                    )}
+
+
                                 </div>
 
                                 {/* Progress Bar */}
@@ -704,7 +705,7 @@ export default function VaultDetailPage() {
                         <Card className="p-6 bg-zinc-900/50 border-white/5 relative overflow-hidden group">
                             <div className="absolute top-0 right-0 w-32 h-32 bg-primary/5 rounded-full blur-3xl -z-10 group-hover:bg-primary/10 transition-colors" />
                             <div className="flex items-center gap-3 mb-4">
-                                
+
                                 <p className="text-xs text-zinc-500 font-bold uppercase tracking-tight">Accrued Interest</p>
                             </div>
                             <div className="flex items-baseline gap-2">
@@ -744,59 +745,28 @@ export default function VaultDetailPage() {
                         ) : isLocked ? (
                             <>
                                 {vaultData?.targetAmount && parseFloat(vaultData.targetAmount) > 0 && (
-                                    <>
-                                        {isTopUpMode ? (
-                                            <motion.div
-                                                initial={{ opacity: 0, height: 0 }}
-                                                animate={{ opacity: 1, height: 'auto' }}
-                                                className="space-y-4 p-4 rounded-xl bg-white/5 border border-white/10"
-                                            >
-                                                <div className="space-y-2">
-                                                    <div className="flex justify-between text-xs">
-                                                        <span className="text-zinc-500">Amount to Add</span>
-                                                        {userBalance !== undefined && (
-                                                            <span className="text-zinc-400">Bal: {formatUnits(userBalance as bigint, decimals as number || 18)} USDC</span>
-                                                        )}
-                                                    </div>
-                                                    <div className="relative">
-                                                        <input
-                                                            type="number"
-                                                            placeholder="0.00"
-                                                            className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-primary/50 text-sm [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                                                            value={topUpAmount}
-                                                            onChange={(e) => setTopUpAmount(e.target.value)}
-                                                        />
-                                                    </div>
-                                                </div>
-                                                <div className="flex gap-2">
-                                                    <Button
-                                                        className="flex-1 h-9 rounded-lg"
-                                                        onClick={() => handleTopUp()}
-                                                        disabled={topUpStep !== 'idle' || isConfirming || !topUpAmount}
-                                                    >
-                                                        {(topUpStep === 'approving' || topUpStep === 'depositing' || isConfirming) ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <ArrowUpCircle className="w-4 h-4 mr-2" />}
-                                                        {topUpStep === 'approving' ? 'Approving...' : (topUpStep === 'depositing' || isConfirming) ? 'Processing...' : 'Confirm'}
-                                                    </Button>
-                                                    <Button
-                                                        variant="ghost"
-                                                        className="h-9 w-9 p-0 rounded-lg hover:bg-white/10"
-                                                        onClick={() => { setIsTopUpMode(false); setTopUpAmount(""); }}
-                                                    >
-                                                        <ArrowLeft className="w-4 h-4" />
-                                                    </Button>
-                                                </div>
-                                            </motion.div>
-                                        ) : (
-                                            <Button
-                                                className="w-full h-12 rounded-xl bg-primary hover:bg-primary/90 text-white font-bold shadow-lg shadow-primary/20"
-                                                onClick={() => setIsTopUpMode(true)}
-                                            >
-                                                <Plus className="w-5 h-5 mr-2" />
-                                                Top Up Savings
-                                            </Button>
-                                        )}
-                                    </>
+                                    <Button
+                                        className="w-full h-12 rounded-xl bg-primary hover:bg-primary/90 text-white font-bold shadow-lg shadow-primary/20"
+                                        onClick={() => setIsTopUpMode(true)}
+                                    >
+                                        <Plus className="w-5 h-5 mr-2" />
+                                        Top Up Savings
+                                    </Button>
                                 )}
+
+                                <div className="z-50 relative">
+                                    <ChainrailsModal
+                                        open={showModal}
+                                        onClose={() => setShowModal(false)}
+                                        address={userAddress as string}
+                                        amount={topUpAmount}
+                                        onLoadingChange={(loading) => setIsFiatLoading(loading)}
+                                        onSuccess={() => {
+                                            // Proceed with top up assuming USDC has arrived
+                                            handleTopUp(true); // pass true to bypass fiat check
+                                        }}
+                                    />
+                                </div>
 
                                 <Button
                                     variant="ghost"
@@ -846,6 +816,21 @@ export default function VaultDetailPage() {
                 isOpen={isShareModalOpen}
                 onClose={() => setIsShareModalOpen(false)}
                 vaultAddress={address}
+            <VaultTopUpModal
+                isOpen={isTopUpMode}
+                onClose={() => { setIsTopUpMode(false); setTopUpAmount(""); }}
+                vaultData={vaultData}
+                balance={balance}
+                userBalance={userBalance}
+                decimals={decimals as number}
+                topUpStep={topUpStep}
+                isConfirming={isConfirming}
+                isFiatLoading={isFiatLoading}
+                topUpAmount={topUpAmount}
+                setTopUpAmount={setTopUpAmount}
+                selectedTopUpTab={selectedTopUpTab}
+                setSelectedTopUpTab={setSelectedTopUpTab}
+                handleTopUp={handleTopUp}
             />
         </div>
     );
